@@ -85,7 +85,7 @@ func DefaultVideoOptions() VideoOptions {
 		StartingFrame: defaultStartingFrame,
 		KeyStrokeOverlay: KeyStrokeOptions{
 			Events:      []KeyStrokeEvent{},
-			Color:       DefaultTheme.Foreground,
+			Color:       "#FFBF00", // Amber
 			TypingSpeed: defaultTypingSpeed,
 		},
 	}

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -23,7 +23,7 @@ type KeyStrokeEvents struct {
 	enabled        bool
 	display        string
 	events         []KeyStrokeEvent
-	once           sync.Once
+	startTimeSet   bool
 	startTime      time.Time
 	duration       time.Duration
 	maxDisplaySize int
@@ -61,8 +61,8 @@ func NewKeyStrokeEvents(maxDisplaySize int) *KeyStrokeEvents {
 var keystrokeSymbolOverrides = map[input.Key]string{
 	input.Backspace:    "⌫",
 	input.Delete:       "⌦",
-	input.ControlLeft:  "^",
-	input.ControlRight: "^",
+	input.ControlLeft:  "⌃",
+	input.ControlRight: "⌃",
 	input.AltLeft:      "⌥",
 	input.AltRight:     "⌥",
 	input.ShiftLeft:    "⇧",
@@ -73,9 +73,9 @@ var keystrokeSymbolOverrides = map[input.Key]string{
 	input.PageUp:       "⇞",
 	input.ArrowLeft:    "←",
 	input.ArrowRight:   "→",
-	input.Space:        "␣",
+	input.Space:        "·",
 	input.Enter:        "⏎",
-	input.Escape:       "↖",
+	input.Escape:       "⎋",
 	input.Tab:          "⇥",
 }
 
@@ -86,9 +86,18 @@ func keyToDisplay(key input.Key) string {
 	return string(inverseKeymap[key])
 }
 
+func isModifierKey(key input.Key) bool {
+	return key == input.ControlLeft || key == input.ControlRight ||
+		key == input.AltLeft || key == input.AltRight ||
+		key == input.ShiftLeft || key == input.ShiftRight
+}
+
 // Enable enables key press event recording.
+// Also resets the timing so keystrokes sync with video when used after Hide/Show.
 func (k *KeyStrokeEvents) Enable() {
 	k.enabled = true
+	k.startTimeSet = false  // Reset so next Push sets the start time
+	k.display = ""          // Clear any accumulated display
 }
 
 // Disable disables key press event recording.
@@ -105,19 +114,21 @@ func (k *KeyStrokeEvents) End() {
 
 // Push adds a new key press event to the collection.
 func (k *KeyStrokeEvents) Push(display string) {
-	k.once.Do(func() {
-		k.startTime = time.Now()
-	})
-
 	// If we're not enabled, we don't want to do anything.
-	// But note that we still want to update the start time -- this is because
-	// we need to know the global start time if we want to render any subsequent
-	// events correctly, and the keystroke overlay may be re-enabled later in
-	// the recording.
 	if !k.enabled {
 		return
 	}
 
+	// Set start time on first enabled push (reset when Enable() is called)
+	if !k.startTimeSet {
+		k.startTime = time.Now()
+		k.startTimeSet = true
+	}
+
+	// Add space before new keystroke for visual separation (except first)
+	if k.display != "" {
+		k.display += " "
+	}
 	k.display += display
 	// Keep k.display @ 20 max.
 	// Anymore than that is probably overkill, and we don't want to run into
@@ -177,25 +188,47 @@ type KeyActions struct {
 	*rod.KeyActions
 	displays        []string
 	KeyStrokeEvents *KeyStrokeEvents
+	modifierActive  bool
+	modifierSymbol  string
 }
 
 // Press is a wrapper around the rod.KeyActions#Press method.
 func (k *KeyActions) Press(key input.Key) *KeyActions {
-	k.displays = append(k.displays, keyToDisplay(key))
+	display := keyToDisplay(key)
+	modifierSymbol := ""
+
+	// Track if this is a modifier key - don't add to displays yet, buffer it
+	if isModifierKey(key) {
+		modifierSymbol = display
+	} else {
+		k.displays = append(k.displays, display)
+	}
+
 	return &KeyActions{
 		KeyActions:      k.KeyActions.Press(key),
 		displays:        k.displays,
 		KeyStrokeEvents: k.KeyStrokeEvents,
+		modifierActive:  isModifierKey(key),
+		modifierSymbol:  modifierSymbol,
 	}
 }
 
 // Type is a wrapper around the rod.KeyActions#Type method.
 func (k *KeyActions) Type(key input.Key) *KeyActions {
-	k.displays = append(k.displays, keyToDisplay(key))
+	display := keyToDisplay(key)
+
+	// If a modifier is active, combine modifier symbol with the key (lowercase)
+	if k.modifierActive && !isModifierKey(key) {
+		display = k.modifierSymbol + strings.ToLower(display)
+	}
+
+	k.displays = append(k.displays, display)
 	return &KeyActions{
 		KeyActions:      k.KeyActions.Type(key),
 		displays:        k.displays,
 		KeyStrokeEvents: k.KeyStrokeEvents,
+		modifierActive:  false,
+		modifierSymbol:  "",
 	}
 }
 

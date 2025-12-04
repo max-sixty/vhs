@@ -52,7 +52,7 @@ type Options struct {
 }
 
 const (
-	defaultFontSize      = 22
+	defaultFontSize      = 48
 	defaultTypingSpeed   = 50 * time.Millisecond
 	defaultLineHeight    = 1.0
 	defaultLetterSpacing = 1.0

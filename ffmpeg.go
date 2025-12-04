@@ -175,9 +175,11 @@ func (fb *FilterComplexBuilder) WithMarginFill(marginStream int) *FilterComplexB
 // WithKeyStrokes adds key stroke drawtext options to the ffmpeg filter_complex.
 func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplexBuilder {
 	var (
-		defaultFontFamily = "monospace"
-		horizontalCenter  = "(w-text_w)/2"
-		verticalCenter    = fmt.Sprintf("h-text_h-%d", opts.Style.Margin+opts.Style.Padding)
+		defaultFontFamily = "Menlo"
+		fontSize          = 160     // Very large font for maximum visibility
+		ringBufferSize    = 6       // Show last 6 keystrokes (space-separated)
+		keystrokeDelayMS  = 500.0   // Delay to sync with terminal rendering
+		amberColor        = "#FFBF00"
 	)
 	events := opts.KeyStrokeOverlay.Events
 
@@ -208,32 +210,112 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 	prevStageName := fb.prevStageName
 	for i := range events {
 		event := events[i]
-		fb.filterComplex.WriteString(";")
-		stageName := fmt.Sprintf("keystrokeOverlay%d", i)
 
-		// When setting the enable conditions, we have to handle the very last
-		// event specially. It technically has no 'end' so we set it to render
-		// until the end of the video.
-		enableCondition := fmt.Sprintf("gte(t,%f)", float64(event.WhenMS)/1000)
+		// Apply delay to sync with terminal rendering
+		startTimeS := (float64(event.WhenMS) + keystrokeDelayMS) / 1000
+
+		// Calculate end time for this event
+		var endTimeS float64 = -1
 		if i < len(events)-1 {
-			enableCondition = fmt.Sprintf("between(t,%f,%f)", float64(events[i].WhenMS)/1000, float64(events[i+1].WhenMS)/1000)
+			endTimeS = (float64(events[i+1].WhenMS) + keystrokeDelayMS) / 1000
 		}
+
+		// Ring buffer logic: get the last N keystrokes (space-separated)
+		fullDisplay := event.Display
+		keystrokes := strings.Split(fullDisplay, " ")
+		if len(keystrokes) > ringBufferSize {
+			keystrokes = keystrokes[len(keystrokes)-ringBufferSize:]
+		}
+
+		// Split into history (all but last) and new (last keystroke)
+		historyPart := ""
+		newPart := ""
+		if len(keystrokes) > 0 {
+			newPart = keystrokes[len(keystrokes)-1]
+			if len(keystrokes) > 1 {
+				historyPart = strings.Join(keystrokes[:len(keystrokes)-1], " ") + " "
+			}
+		}
+
+		// Enable condition
+		enableCondition := fmt.Sprintf("gte(t,%f)", startTimeS)
+		if endTimeS > 0 {
+			enableCondition = fmt.Sprintf("between(t,%f,%f)", startTimeS, endTimeS)
+		}
+
+		// Draw each part only once to avoid color bleed-through
+		fullText := strings.Join(keystrokes, " ")
+		charWidth := fontSize * 6 / 10 // Approximate monospace char width
+		boxPadding := 25
+
+		// Calculate positions - center the full text
+		fullTextWidth := len([]rune(fullText)) * charWidth
+		startX := (fb.termWidth - fullTextWidth) / 2
+		historyWidth := len([]rune(historyPart)) * charWidth
+
+		// Calculate box dimensions (text height is roughly fontSize)
+		boxX := startX - boxPadding
+		boxY := (fb.termHeight - fontSize) / 2 - boxPadding
+		boxW := fullTextWidth + 2*boxPadding
+		boxH := fontSize + 2*boxPadding
+
+		// Draw white background box
+		fb.filterComplex.WriteString(";")
+		boxStageName := fmt.Sprintf("keystrokeBox%d", i)
 		fb.filterComplex.WriteString(
 			fmt.Sprintf(`
-			[%s]drawtext=font=%s:text='%s':fontcolor=%s:fontsize=%d:x='%s':y='%s':enable='%s'[%s]
+			[%s]drawbox=x=%d:y=%d:w=%d:h=%d:color=white:t=fill:enable='%s'[%s]
+			`,
+				prevStageName,
+				boxX,
+				boxY,
+				boxW,
+				boxH,
+				enableCondition,
+				boxStageName,
+			),
+		)
+		prevStageName = boxStageName
+
+		// Draw history part in black (if there is history)
+		if historyPart != "" {
+			fb.filterComplex.WriteString(";")
+			historyStageName := fmt.Sprintf("keystrokeHist%d", i)
+			fb.filterComplex.WriteString(
+				fmt.Sprintf(`
+				[%s]drawtext=font=%s:text='%s':fontcolor=black:fontsize=%d:x=%d:y='(h-text_h)/2':enable='%s'[%s]
+				`,
+					prevStageName,
+					defaultFontFamily,
+					historyPart,
+					fontSize,
+					startX,
+					enableCondition,
+					historyStageName,
+				),
+			)
+			prevStageName = historyStageName
+		}
+
+		// Draw new keystroke in amber
+		fb.filterComplex.WriteString(";")
+		newStageName := fmt.Sprintf("keystrokeNew%d", i)
+		newX := startX + historyWidth
+		fb.filterComplex.WriteString(
+			fmt.Sprintf(`
+			[%s]drawtext=font=%s:text='%s':fontcolor=%s:fontsize=%d:x=%d:y='(h-text_h)/2':enable='%s'[%s]
 			`,
 				prevStageName,
 				defaultFontFamily,
-				events[i].Display,
-				opts.KeyStrokeOverlay.Color,
-				defaultFontSize,
-				horizontalCenter,
-				verticalCenter,
+				newPart,
+				amberColor,
+				fontSize,
+				newX,
 				enableCondition,
-				stageName,
+				newStageName,
 			),
 		)
-		prevStageName = stageName
+		prevStageName = newStageName
 	}
 
 	// At the end of the loop, the previous stage name is now transfered to the filter complex builder's
