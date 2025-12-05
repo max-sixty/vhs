@@ -50,12 +50,11 @@ func TestKeyStrokeEventsCompoundAlignment(t *testing.T) {
 	// Simulate: 3, ⌃d, ⌃d, q sequence
 	events.Push("3")
 	events.Push("⌃d") // 2-char compound keystroke
-	events.Push("⌃d") // Another compound - should be adjacent, no space
+	events.Push("⌃d") // Another compound
 	events.Push("q")
 
-	// Compounds attach directly (no space before), single-chars get space before
-	// Result: "3⌃d⌃d q" - compounds adjacent to previous, space before single-char q
-	checkKeyStrokeEvents(t, events, "3", "3⌃d", "3⌃d⌃d", "3⌃d⌃d q")
+	// All keystrokes space-separated for parsing; visual joining happens at render
+	checkKeyStrokeEvents(t, events, "3", "3 ⌃d", "3 ⌃d ⌃d", "3 ⌃d ⌃d q")
 }
 
 func TestKeyStrokeEventsShowsNothingIfDisabled(t *testing.T) {

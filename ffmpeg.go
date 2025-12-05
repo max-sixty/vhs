@@ -172,6 +172,19 @@ func (fb *FilterComplexBuilder) WithMarginFill(marginStream int) *FilterComplexB
 	return fb
 }
 
+// smartJoinKeystrokes joins keystrokes with spaces only before single-char keystrokes.
+// This gives right-aligned appearance: "3^d^d^d s" instead of "3 ^d ^d ^d s"
+func smartJoinKeystrokes(keystrokes []string) string {
+	var result strings.Builder
+	for i, ks := range keystrokes {
+		if i > 0 && len([]rune(ks)) == 1 {
+			result.WriteString(" ")
+		}
+		result.WriteString(ks)
+	}
+	return result.String()
+}
+
 // WithKeyStrokes adds key stroke drawtext options to the ffmpeg filter_complex.
 func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplexBuilder {
 	var (
@@ -233,7 +246,12 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 		if len(keystrokes) > 0 {
 			newPart = keystrokes[len(keystrokes)-1]
 			if len(keystrokes) > 1 {
-				historyPart = strings.Join(keystrokes[:len(keystrokes)-1], " ") + " "
+				historyKeystrokes := keystrokes[:len(keystrokes)-1]
+				historyPart = smartJoinKeystrokes(historyKeystrokes)
+				// Add trailing space only if newPart is single-char
+				if len([]rune(newPart)) == 1 {
+					historyPart += " "
+				}
 			}
 		}
 
@@ -244,7 +262,7 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 		}
 
 		// Draw each part only once to avoid color bleed-through
-		fullText := strings.Join(keystrokes, " ")
+		fullText := smartJoinKeystrokes(keystrokes)
 		charWidth := fontSize * 6 / 10 // Approximate monospace char width
 		boxPadding := 25
 
@@ -252,10 +270,11 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 		fullTextWidth := len([]rune(fullText)) * charWidth
 		startX := (fb.termWidth - fullTextWidth) / 2
 		historyWidth := len([]rune(historyPart)) * charWidth
+		textY := (fb.termHeight - fontSize) / 2 // Fixed y for consistent vertical alignment
 
 		// Calculate box dimensions (text height is roughly fontSize)
 		boxX := startX - boxPadding
-		boxY := (fb.termHeight - fontSize) / 2 - boxPadding
+		boxY := textY - boxPadding
 		boxW := fullTextWidth + 2*boxPadding
 		boxH := fontSize + 2*boxPadding
 
@@ -283,13 +302,14 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 			historyStageName := fmt.Sprintf("keystrokeHist%d", i)
 			fb.filterComplex.WriteString(
 				fmt.Sprintf(`
-				[%s]drawtext=font=%s:text='%s':fontcolor=black:fontsize=%d:x=%d:y='(h-text_h)/2':enable='%s'[%s]
+				[%s]drawtext=font=%s:text='%s':fontcolor=black:fontsize=%d:x=%d:y=%d:enable='%s'[%s]
 				`,
 					prevStageName,
 					defaultFontFamily,
 					historyPart,
 					fontSize,
 					startX,
+					textY,
 					enableCondition,
 					historyStageName,
 				),
@@ -303,7 +323,7 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 		newX := startX + historyWidth
 		fb.filterComplex.WriteString(
 			fmt.Sprintf(`
-			[%s]drawtext=font=%s:text='%s':fontcolor=%s:fontsize=%d:x=%d:y='(h-text_h)/2':enable='%s'[%s]
+			[%s]drawtext=font=%s:text='%s':fontcolor=%s:fontsize=%d:x=%d:y=%d:enable='%s'[%s]
 			`,
 				prevStageName,
 				defaultFontFamily,
@@ -311,6 +331,7 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 				amberColor,
 				fontSize,
 				newX,
+				textY,
 				enableCondition,
 				newStageName,
 			),

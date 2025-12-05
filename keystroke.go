@@ -125,11 +125,9 @@ func (k *KeyStrokeEvents) Push(display string) {
 		k.startTimeSet = true
 	}
 
-	// Add space for visual alignment (right-aligned display):
-	// - Space BEFORE single-char keystrokes (separates them visually)
-	// - NO space before compound keystrokes (they attach to previous)
-	// Result: "3^d^d^d s" - compounds attach, single chars separated
-	if k.display != "" && len([]rune(display)) == 1 {
+	// Always space-separate keystrokes for proper parsing in ffmpeg.go
+	// The visual joining (compounds without leading space) happens at render time
+	if k.display != "" {
 		k.display += " "
 	}
 	k.display += display
