@@ -269,7 +269,6 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 		// Calculate positions - center the full text
 		fullTextWidth := len([]rune(fullText)) * charWidth
 		startX := (fb.termWidth - fullTextWidth) / 2
-		historyWidth := len([]rune(historyPart)) * charWidth
 		textY := (fb.termHeight - fontSize) / 2 // Fixed y for consistent vertical alignment
 
 		// Calculate box dimensions (text height is roughly fontSize)
@@ -296,7 +295,28 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 		)
 		prevStageName = boxStageName
 
-		// Draw history part in black (if there is history)
+		// Draw full text in amber first, then overdraw history in black.
+		// This ensures both use the same bounding box for consistent baseline alignment.
+		fb.filterComplex.WriteString(";")
+		amberStageName := fmt.Sprintf("keystrokeAmber%d", i)
+		fb.filterComplex.WriteString(
+			fmt.Sprintf(`
+			[%s]drawtext=font=%s:text='%s':fontcolor=%s:fontsize=%d:x=%d:y=%d:enable='%s'[%s]
+			`,
+				prevStageName,
+				defaultFontFamily,
+				fullText,
+				amberColor,
+				fontSize,
+				startX,
+				textY,
+				enableCondition,
+				amberStageName,
+			),
+		)
+		prevStageName = amberStageName
+
+		// Overdraw history part in black (covers amber, leaving only new part visible)
 		if historyPart != "" {
 			fb.filterComplex.WriteString(";")
 			historyStageName := fmt.Sprintf("keystrokeHist%d", i)
@@ -316,27 +336,6 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 			)
 			prevStageName = historyStageName
 		}
-
-		// Draw new keystroke in amber
-		fb.filterComplex.WriteString(";")
-		newStageName := fmt.Sprintf("keystrokeNew%d", i)
-		newX := startX + historyWidth
-		fb.filterComplex.WriteString(
-			fmt.Sprintf(`
-			[%s]drawtext=font=%s:text='%s':fontcolor=%s:fontsize=%d:x=%d:y=%d:enable='%s'[%s]
-			`,
-				prevStageName,
-				defaultFontFamily,
-				newPart,
-				amberColor,
-				fontSize,
-				newX,
-				textY,
-				enableCondition,
-				newStageName,
-			),
-		)
-		prevStageName = newStageName
 	}
 
 	// At the end of the loop, the previous stage name is now transfered to the filter complex builder's
