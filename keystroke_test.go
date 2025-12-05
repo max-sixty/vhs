@@ -27,20 +27,35 @@ func TestKeyStrokeEventsRemembersKeyStrokes(t *testing.T) {
 	events.Push("a")
 	events.Push("b")
 	events.Push("c")
-	checkKeyStrokeEvents(t, events, "a", "ab", "abc")
+	// Single-char keystrokes get trailing alignment space
+	checkKeyStrokeEvents(t, events, "a ", "a b ", "a b c ")
 }
 
 func TestKeyStrokeEventsHonorsMaxDisplaySize(t *testing.T) {
 	events := defaultKeyStrokeEvents()
-	events.maxDisplaySize = 2
+	events.maxDisplaySize = 4 // Increased to account for alignment spaces
 
 	events.Push("a")
 	events.Push("b")
 	events.Push("c")
 
-	// NOTE: It should not be "ab", but "bc" at the end -- we should be acting
-	// like a ring buffer.
-	checkKeyStrokeEvents(t, events, "a", "ab", "bc")
+	// NOTE: Ring buffer removes one rune at a time when over limit.
+	// Single-char keystrokes get trailing alignment space.
+	// "a b c " (6 chars) → " b c " (5 chars after trimming 'a')
+	checkKeyStrokeEvents(t, events, "a ", "a b ", " b c ")
+}
+
+func TestKeyStrokeEventsCompoundAlignment(t *testing.T) {
+	events := defaultKeyStrokeEvents()
+
+	// Simulate: 3, ⌃d, q sequence
+	events.Push("3")
+	events.Push("⌃d") // 2-char compound keystroke
+	events.Push("q")
+
+	// Single-char gets trailing space; 2-char compound doesn't
+	// Result: "3 ⌃d q " - single space between 3 and ⌃d
+	checkKeyStrokeEvents(t, events, "3 ", "3 ⌃d", "3 ⌃d q ")
 }
 
 func TestKeyStrokeEventsShowsNothingIfDisabled(t *testing.T) {
