@@ -48,14 +48,15 @@ func TestKeyStrokeEventsHonorsMaxDisplaySize(t *testing.T) {
 func TestKeyStrokeEventsCompoundAlignment(t *testing.T) {
 	events := defaultKeyStrokeEvents()
 
-	// Simulate: 3, ⌃d, q sequence
+	// Simulate: 3, ⌃d, ⌃d, q sequence
 	events.Push("3")
 	events.Push("⌃d") // 2-char compound keystroke
+	events.Push("⌃d") // Another compound - should be adjacent, no space
 	events.Push("q")
 
-	// Single-char gets trailing space; 2-char compound doesn't
-	// Result: "3 ⌃d q " - single space between 3 and ⌃d
-	checkKeyStrokeEvents(t, events, "3 ", "3 ⌃d", "3 ⌃d q ")
+	// Single-char gets trailing space; compounds are adjacent with no space
+	// Result: "3 ⌃d⌃d q " - compounds adjacent, single chars have alignment space
+	checkKeyStrokeEvents(t, events, "3 ", "3 ⌃d", "3 ⌃d⌃d", "3 ⌃d⌃d q ")
 }
 
 func TestKeyStrokeEventsShowsNothingIfDisabled(t *testing.T) {

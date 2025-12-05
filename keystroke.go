@@ -127,17 +127,17 @@ func (k *KeyStrokeEvents) Push(display string) {
 
 	// Add space for visual alignment:
 	// - Single-char keystrokes get a trailing space (to match 2-char compounds like ⌃d)
-	// - 2-char compound keystrokes don't need extra space
-	// - Separator space added before 2-char keys if previous didn't end with space
-	if k.display != "" {
+	// - 2-char compound keystrokes get NO space (before or after) - they appear adjacent
+	// Result: "3 ⌃d⌃d⌃d s " - compounds are adjacent, single chars have alignment space
+	if k.display != "" && len([]rune(display)) == 1 {
 		displayRunes := []rune(k.display)
-		// If display doesn't end with space, previous keystroke was 2+ chars, need separator
+		// Only add separator before single-char if previous was 2+ chars (didn't end with space)
 		if displayRunes[len(displayRunes)-1] != ' ' {
 			k.display += " "
 		}
 	}
 	k.display += display
-	// Add trailing alignment space for single-char keystrokes
+	// Add trailing alignment space for single-char keystrokes only
 	if len([]rune(display)) == 1 {
 		k.display += " "
 	}
