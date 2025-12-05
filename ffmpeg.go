@@ -192,7 +192,6 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 		fontSize          = 160     // Very large font for maximum visibility
 		ringBufferSize    = 6       // Show last 6 keystrokes (space-separated)
 		keystrokeDelayMS  = 500.0   // Delay to sync with terminal rendering
-		amberColor        = "#FFBF00"
 	)
 	events := opts.KeyStrokeOverlay.Events
 
@@ -295,47 +294,25 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 		)
 		prevStageName = boxStageName
 
-		// Draw full text in amber first, then overdraw history in black.
-		// This ensures both use the same bounding box for consistent baseline alignment.
+		// Single drawtext with all keystrokes in black.
+		// FFmpeg drawtext doesn't support inline color changes, so we use one color.
 		fb.filterComplex.WriteString(";")
-		amberStageName := fmt.Sprintf("keystrokeAmber%d", i)
+		textStageName := fmt.Sprintf("keystrokeText%d", i)
 		fb.filterComplex.WriteString(
 			fmt.Sprintf(`
-			[%s]drawtext=font=%s:text='%s':fontcolor=%s:fontsize=%d:x=%d:y=%d:enable='%s'[%s]
+			[%s]drawtext=font=%s:text='%s':fontcolor=black:fontsize=%d:x=%d:y=%d:enable='%s'[%s]
 			`,
 				prevStageName,
 				defaultFontFamily,
 				fullText,
-				amberColor,
 				fontSize,
 				startX,
 				textY,
 				enableCondition,
-				amberStageName,
+				textStageName,
 			),
 		)
-		prevStageName = amberStageName
-
-		// Overdraw history part in black (covers amber, leaving only new part visible)
-		if historyPart != "" {
-			fb.filterComplex.WriteString(";")
-			historyStageName := fmt.Sprintf("keystrokeHist%d", i)
-			fb.filterComplex.WriteString(
-				fmt.Sprintf(`
-				[%s]drawtext=font=%s:text='%s':fontcolor=black:fontsize=%d:x=%d:y=%d:enable='%s'[%s]
-				`,
-					prevStageName,
-					defaultFontFamily,
-					historyPart,
-					fontSize,
-					startX,
-					textY,
-					enableCondition,
-					historyStageName,
-				),
-			)
-			prevStageName = historyStageName
-		}
+		prevStageName = textStageName
 	}
 
 	// At the end of the loop, the previous stage name is now transfered to the filter complex builder's
