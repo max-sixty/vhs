@@ -259,12 +259,12 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 		boxW := fullTextWidth + 2*boxPadding
 		boxH := fontSize + 2*boxPadding
 
-		// Draw white background box
+		// Draw semi-transparent white background box (70% opacity)
 		fb.filterComplex.WriteString(";")
 		boxStageName := fmt.Sprintf("keystrokeBox%d", i)
 		fb.filterComplex.WriteString(
 			fmt.Sprintf(`
-			[%s]drawbox=x=%d:y=%d:w=%d:h=%d:color=white:t=fill:enable='%s'[%s]
+			[%s]drawbox=x=%d:y=%d:w=%d:h=%d:color=white@0.7:t=fill:enable='%s'[%s]
 			`,
 				prevStageName,
 				boxX,
