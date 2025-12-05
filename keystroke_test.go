@@ -27,22 +27,21 @@ func TestKeyStrokeEventsRemembersKeyStrokes(t *testing.T) {
 	events.Push("a")
 	events.Push("b")
 	events.Push("c")
-	// Single-char keystrokes get trailing alignment space
-	checkKeyStrokeEvents(t, events, "a ", "a b ", "a b c ")
+	// Space BEFORE single-char keystrokes (no trailing space)
+	checkKeyStrokeEvents(t, events, "a", "a b", "a b c")
 }
 
 func TestKeyStrokeEventsHonorsMaxDisplaySize(t *testing.T) {
 	events := defaultKeyStrokeEvents()
-	events.maxDisplaySize = 4 // Increased to account for alignment spaces
+	events.maxDisplaySize = 4
 
 	events.Push("a")
 	events.Push("b")
 	events.Push("c")
 
 	// NOTE: Ring buffer removes one rune at a time when over limit.
-	// Single-char keystrokes get trailing alignment space.
-	// "a b c " (6 chars) → " b c " (5 chars after trimming 'a')
-	checkKeyStrokeEvents(t, events, "a ", "a b ", " b c ")
+	// "a b c" (5 chars) > 4, trim to " b c" (4 chars)
+	checkKeyStrokeEvents(t, events, "a", "a b", " b c")
 }
 
 func TestKeyStrokeEventsCompoundAlignment(t *testing.T) {
@@ -54,9 +53,9 @@ func TestKeyStrokeEventsCompoundAlignment(t *testing.T) {
 	events.Push("⌃d") // Another compound - should be adjacent, no space
 	events.Push("q")
 
-	// Single-char gets trailing space; compounds are adjacent with no space
-	// Result: "3 ⌃d⌃d q " - compounds adjacent, single chars have alignment space
-	checkKeyStrokeEvents(t, events, "3 ", "3 ⌃d", "3 ⌃d⌃d", "3 ⌃d⌃d q ")
+	// Compounds attach directly (no space before), single-chars get space before
+	// Result: "3⌃d⌃d q" - compounds adjacent to previous, space before single-char q
+	checkKeyStrokeEvents(t, events, "3", "3⌃d", "3⌃d⌃d", "3⌃d⌃d q")
 }
 
 func TestKeyStrokeEventsShowsNothingIfDisabled(t *testing.T) {

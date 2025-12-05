@@ -125,22 +125,14 @@ func (k *KeyStrokeEvents) Push(display string) {
 		k.startTimeSet = true
 	}
 
-	// Add space for visual alignment:
-	// - Single-char keystrokes get a trailing space (to match 2-char compounds like ⌃d)
-	// - 2-char compound keystrokes get NO space (before or after) - they appear adjacent
-	// Result: "3 ⌃d⌃d⌃d s " - compounds are adjacent, single chars have alignment space
+	// Add space for visual alignment (right-aligned display):
+	// - Space BEFORE single-char keystrokes (separates them visually)
+	// - NO space before compound keystrokes (they attach to previous)
+	// Result: "3^d^d^d s" - compounds attach, single chars separated
 	if k.display != "" && len([]rune(display)) == 1 {
-		displayRunes := []rune(k.display)
-		// Only add separator before single-char if previous was 2+ chars (didn't end with space)
-		if displayRunes[len(displayRunes)-1] != ' ' {
-			k.display += " "
-		}
-	}
-	k.display += display
-	// Add trailing alignment space for single-char keystrokes only
-	if len([]rune(display)) == 1 {
 		k.display += " "
 	}
+	k.display += display
 	// Keep k.display @ 20 max.
 	// Anymore than that is probably overkill, and we don't want to run into
 	// issues where the overlay text is longer than the video width itself.
