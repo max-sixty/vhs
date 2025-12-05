@@ -185,13 +185,114 @@ func smartJoinKeystrokes(keystrokes []string) string {
 	return result.String()
 }
 
-// WithKeyStrokes adds key stroke drawtext options to the ffmpeg filter_complex.
+// formatASSTime formats a time in seconds to ASS timestamp format (H:MM:SS.cc)
+func formatASSTime(seconds float64) string {
+	hours := int(seconds) / 3600
+	minutes := (int(seconds) % 3600) / 60
+	secs := int(seconds) % 60
+	centiseconds := int((seconds - float64(int(seconds))) * 100)
+	return fmt.Sprintf("%d:%02d:%02d.%02d", hours, minutes, secs, centiseconds)
+}
+
+// generateASSContent creates ASS subtitle content for keystroke overlay with multi-colored text.
+// History keystrokes are black, the newest keystroke is amber/gold.
+// Note: This generates text-only subtitles. The background box is drawn separately via drawbox filter.
+func generateASSContent(opts VideoOptions, termWidth, termHeight int) string {
+	var (
+		fontFamily       = "Menlo"
+		fontSize         = 160
+		ringBufferSize   = 6
+		keystrokeDelayMS = 500.0
+		// black text color (ASS format: &HAABBGGRR, AA=alpha where 00=opaque)
+		blackColorASS = "&H00000000&"
+	)
+	events := opts.KeyStrokeOverlay.Events
+
+	var ass strings.Builder
+
+	// ASS header
+	ass.WriteString("[Script Info]\n")
+	ass.WriteString("ScriptType: v4.00+\n")
+	ass.WriteString(fmt.Sprintf("PlayResX: %d\n", termWidth))
+	ass.WriteString(fmt.Sprintf("PlayResY: %d\n", termHeight))
+	ass.WriteString("\n")
+
+	// Style definition
+	// Alignment 5 = center (middle center)
+	// BorderStyle 1 = outline + drop shadow (we set both to 0 for clean text)
+	// No background - we'll use drawbox filter for that
+	ass.WriteString("[V4+ Styles]\n")
+	ass.WriteString("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
+	ass.WriteString(fmt.Sprintf("Style: Keystrokes,%s,%d,%s,%s,&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,0\n",
+		fontFamily, fontSize, blackColorASS, blackColorASS))
+	ass.WriteString("\n")
+
+	// Events
+	ass.WriteString("[Events]\n")
+	ass.WriteString("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n")
+
+	for i := range events {
+		event := events[i]
+
+		// Apply delay to sync with terminal rendering
+		startTimeS := (float64(event.WhenMS) + keystrokeDelayMS) / 1000
+
+		// Calculate end time for this event
+		var endTimeS float64
+		if i < len(events)-1 {
+			endTimeS = (float64(events[i+1].WhenMS) + keystrokeDelayMS) / 1000
+		} else {
+			// Last event: show for 10 seconds or until recording ends
+			endTimeS = startTimeS + 10.0
+		}
+
+		// Ring buffer logic: get the last N keystrokes (space-separated)
+		fullDisplay := event.Display
+		keystrokes := strings.Split(fullDisplay, " ")
+		if len(keystrokes) > ringBufferSize {
+			keystrokes = keystrokes[len(keystrokes)-ringBufferSize:]
+		}
+
+		// Build the ASS text with color override for the newest keystroke
+		// ASS color override tag: {\c&HBBGGRR&} (no alpha in inline override)
+		// or {\1c&HBBGGRR&} for primary color
+		var assText string
+		if len(keystrokes) == 1 {
+			// Only one keystroke - show it in amber
+			assText = fmt.Sprintf("{\\c&H00B0FF&}%s", keystrokes[0])
+		} else {
+			// History in black (default), newest in amber
+			historyKeystrokes := keystrokes[:len(keystrokes)-1]
+			newPart := keystrokes[len(keystrokes)-1]
+			historyPart := smartJoinKeystrokes(historyKeystrokes)
+
+			// Add trailing space only if newPart is single-char
+			if len([]rune(newPart)) == 1 {
+				historyPart += " "
+			}
+
+			// History uses default color (black from style), newest gets amber override
+			assText = fmt.Sprintf("%s{\\c&H00B0FF&}%s", historyPart, newPart)
+		}
+
+		ass.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Keystrokes,,0,0,0,,%s\n",
+			formatASSTime(startTimeS),
+			formatASSTime(endTimeS),
+			assText))
+	}
+
+	return ass.String()
+}
+
+// WithKeyStrokes adds keystroke overlay using ASS subtitles for multi-colored text.
+// History keystrokes appear in black, the newest keystroke appears in amber/gold.
+// Uses drawbox for background + ASS for colored text.
 func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplexBuilder {
 	var (
-		defaultFontFamily = "Menlo"
-		fontSize          = 160     // Very large font for maximum visibility
-		ringBufferSize    = 6       // Show last 6 keystrokes (space-separated)
-		keystrokeDelayMS  = 500.0   // Delay to sync with terminal rendering
+		fontSize         = 160
+		ringBufferSize   = 6
+		keystrokeDelayMS = 500.0
+		boxPadding       = 25
 	)
 	events := opts.KeyStrokeOverlay.Events
 
@@ -219,6 +320,7 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 		fb.prevStageName = "endpad"
 	}
 
+	// First pass: draw background boxes for each keystroke event
 	prevStageName := fb.prevStageName
 	for i := range events {
 		event := events[i]
@@ -239,38 +341,19 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 			keystrokes = keystrokes[len(keystrokes)-ringBufferSize:]
 		}
 
-		// Split into history (all but last) and new (last keystroke)
-		historyPart := ""
-		newPart := ""
-		if len(keystrokes) > 0 {
-			newPart = keystrokes[len(keystrokes)-1]
-			if len(keystrokes) > 1 {
-				historyKeystrokes := keystrokes[:len(keystrokes)-1]
-				historyPart = smartJoinKeystrokes(historyKeystrokes)
-				// Add trailing space only if newPart is single-char
-				if len([]rune(newPart)) == 1 {
-					historyPart += " "
-				}
-			}
-		}
-
 		// Enable condition
 		enableCondition := fmt.Sprintf("gte(t,%f)", startTimeS)
 		if endTimeS > 0 {
 			enableCondition = fmt.Sprintf("between(t,%f,%f)", startTimeS, endTimeS)
 		}
 
-		// Draw each part only once to avoid color bleed-through
+		// Calculate box dimensions
 		fullText := smartJoinKeystrokes(keystrokes)
 		charWidth := fontSize * 6 / 10 // Approximate monospace char width
-		boxPadding := 25
-
-		// Calculate positions - center the full text
 		fullTextWidth := len([]rune(fullText)) * charWidth
 		startX := (fb.termWidth - fullTextWidth) / 2
-		textY := (fb.termHeight - fontSize) / 2 // Fixed y for consistent vertical alignment
+		textY := (fb.termHeight - fontSize) / 2
 
-		// Calculate box dimensions (text height is roughly fontSize)
 		boxX := startX - boxPadding
 		boxY := textY - boxPadding
 		boxW := fullTextWidth + 2*boxPadding
@@ -280,9 +363,7 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 		fb.filterComplex.WriteString(";")
 		boxStageName := fmt.Sprintf("keystrokeBox%d", i)
 		fb.filterComplex.WriteString(
-			fmt.Sprintf(`
-			[%s]drawbox=x=%d:y=%d:w=%d:h=%d:color=white@0.7:t=fill:enable='%s'[%s]
-			`,
+			fmt.Sprintf(`[%s]drawbox=x=%d:y=%d:w=%d:h=%d:color=white@0.7:t=fill:enable='%s'[%s]`,
 				prevStageName,
 				boxX,
 				boxY,
@@ -293,31 +374,28 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 			),
 		)
 		prevStageName = boxStageName
-
-		// Single drawtext with all keystrokes in black.
-		// FFmpeg drawtext doesn't support inline color changes, so we use one color.
-		fb.filterComplex.WriteString(";")
-		textStageName := fmt.Sprintf("keystrokeText%d", i)
-		fb.filterComplex.WriteString(
-			fmt.Sprintf(`
-			[%s]drawtext=font=%s:text='%s':fontcolor=black:fontsize=%d:x=%d:y=%d:enable='%s'[%s]
-			`,
-				prevStageName,
-				defaultFontFamily,
-				fullText,
-				fontSize,
-				startX,
-				textY,
-				enableCondition,
-				textStageName,
-			),
-		)
-		prevStageName = textStageName
 	}
 
-	// At the end of the loop, the previous stage name is now transfered to the filter complex builder's
-	// state for use in subsequent filters.
-	fb.prevStageName = prevStageName
+	// Generate ASS subtitle file for the colored text
+	assContent := generateASSContent(opts, fb.termWidth, fb.termHeight)
+	assPath := filepath.Join(opts.Input, "keystrokes.ass")
+	err := os.WriteFile(assPath, []byte(assContent), 0644)
+	if err != nil {
+		fmt.Println(ErrorStyle.Render("Unable to write ASS file: "), assPath)
+		fb.prevStageName = prevStageName
+		return fb
+	}
+
+	// Apply ASS subtitles on top of the boxes
+	fb.filterComplex.WriteString(";")
+	fb.filterComplex.WriteString(
+		fmt.Sprintf(`[%s]ass=%s[withkeystrokes]`,
+			prevStageName,
+			assPath,
+		),
+	)
+	fb.prevStageName = "withkeystrokes"
+
 	return fb
 }
 
