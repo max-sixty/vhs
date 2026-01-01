@@ -179,7 +179,8 @@ const (
 	keystrokeRingBuffer   = 6
 	keystrokeDelayMS      = 500.0
 	keystrokeBoxPadding   = 25
-	keystrokeCharWidthPct = 0.6 // Approximate width/height ratio for Menlo monospace
+	keystrokeCharWidthPct = 0.6  // Approximate width/height ratio for Menlo monospace
+	keystrokeBottomMargin = 40   // Margin from bottom of screen
 
 	// ASS color format: &HAABBGGRR& (AA=alpha, 00=opaque)
 	assColorBlack = "&H00000000&"
@@ -232,13 +233,14 @@ func generateASSContent(opts VideoOptions, termWidth, termHeight int) string {
 	ass.WriteString("\n")
 
 	// Style definition
-	// Alignment 5 = center (middle center)
+	// Alignment 2 = bottom center
 	// BorderStyle 1 = outline + drop shadow (we set both to 0 for clean text)
 	// No background - we'll use drawbox filter for that
+	// MarginV positions text from bottom edge
 	ass.WriteString("[V4+ Styles]\n")
 	ass.WriteString("Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n")
-	ass.WriteString(fmt.Sprintf("Style: Keystrokes,%s,%d,%s,%s,&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,0,0,5,0,0,0,0\n",
-		keystrokeFontFamily, keystrokeFontSize, assColorBlack, assColorBlack))
+	ass.WriteString(fmt.Sprintf("Style: Keystrokes,%s,%d,%s,%s,&H00000000&,&H00000000&,0,0,0,0,100,100,0,0,1,0,0,2,0,0,%d,0\n",
+		keystrokeFontFamily, keystrokeFontSize, assColorBlack, assColorBlack, keystrokeBottomMargin))
 	ass.WriteString("\n")
 
 	// Events
@@ -344,11 +346,11 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 			enableCondition = fmt.Sprintf("between(t,%f,%f)", startTimeS, endTimeS)
 		}
 
-		// Calculate box dimensions
+		// Calculate box dimensions (positioned at bottom of screen)
 		fullText := smartJoinKeystrokes(keystrokes)
 		fullTextWidth := len([]rune(fullText)) * charWidth
 		startX := (fb.termWidth - fullTextWidth) / 2
-		textY := (fb.termHeight - keystrokeFontSize) / 2
+		textY := fb.termHeight - keystrokeFontSize - keystrokeBottomMargin - keystrokeBoxPadding
 
 		boxX := startX - keystrokeBoxPadding
 		boxY := textY - keystrokeBoxPadding
