@@ -175,12 +175,12 @@ func (fb *FilterComplexBuilder) WithMarginFill(marginStream int) *FilterComplexB
 // Keystroke overlay constants
 const (
 	keystrokeFontFamily   = "Menlo"
-	keystrokeFontSize     = 160
+	keystrokeFontSize     = 70
 	keystrokeRingBuffer   = 6
 	keystrokeDelayMS      = 500.0
-	keystrokeBoxPadding   = 25
+	keystrokeBoxPadding   = 12
 	keystrokeCharWidthPct = 0.6  // Approximate width/height ratio for Menlo monospace
-	keystrokeBottomMargin = 40   // Margin from bottom of screen
+	keystrokeBottomMargin = 20   // Margin from bottom of screen
 
 	// ASS color format: &HAABBGGRR& (AA=alpha, 00=opaque)
 	assColorBlack = "&H00000000&"
