@@ -1,8 +1,10 @@
 package main
 
 import (
+	"reflect"
 	"testing"
 
+	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/input"
 )
 
@@ -107,6 +109,58 @@ func TestKeyStrokeEventsKeyToDisplay(t *testing.T) {
 			t.Parallel()
 			if actual := keyToDisplay(tc.key); tc.expected != actual {
 				t.Fatalf("expected display %q, got %q", tc.expected, actual)
+			}
+		})
+	}
+}
+
+// TestKeyActionsRecordsAModifiedKeyAsOneKeystroke pins the display a key
+// combination contributes to the overlay. A modifier recorded on its own would
+// be greyed into the history while the key it modifies was highlighted as the
+// newest keystroke, so ⌥8 would read as an unrelated ⌥ followed by an 8.
+func TestKeyActionsRecordsAModifiedKeyAsOneKeystroke(t *testing.T) {
+	cases := []struct {
+		name     string
+		press    func(*KeyActions)
+		expected []string
+	}{
+		{
+			name:     "alt digit",
+			press:    func(k *KeyActions) { k.Press(input.AltLeft).Type(input.Digit8) },
+			expected: []string{"⌥8"},
+		},
+		{
+			name:     "ctrl letter",
+			press:    func(k *KeyActions) { k.Press(input.ControlLeft).Type(input.KeyD) },
+			expected: []string{"⌃d"},
+		},
+		{
+			name: "two modifiers",
+			press: func(k *KeyActions) {
+				k.Press(input.ControlLeft).Press(input.ShiftLeft).Type(input.KeyD)
+			},
+			expected: []string{"⌃⇧d"},
+		},
+		{
+			name:     "no modifier",
+			press:    func(k *KeyActions) { k.Type(input.KeyA) },
+			expected: []string{"a"},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// A zero Page is enough: rod's KeyActions only records the actions
+			// until they are executed, which needs a browser and a tape.
+			actions := &KeyActions{
+				KeyActions:      (&rod.Page{}).KeyActions(),
+				KeyStrokeEvents: defaultKeyStrokeEvents(),
+			}
+			tc.press(actions)
+			if !reflect.DeepEqual(actions.displays, tc.expected) {
+				t.Fatalf("expected displays %q, got %q", tc.expected, actions.displays)
 			}
 		})
 	}

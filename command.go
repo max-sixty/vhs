@@ -140,45 +140,38 @@ func ExecuteCtrl(c parser.Command, v *VHS) {
 // ExecuteAlt is a CommandFunc that presses the argument key with the alt key
 // held down on the running instance of vhs.
 func ExecuteAlt(c parser.Command, v *VHS) {
-	v.Page.Keyboard.Press(input.AltLeft)
-	if k, ok := token.Keywords[c.Args]; ok {
-		switch k {
-		case token.ENTER:
-			v.Page.Keyboard.Type(input.Enter)
-		case token.TAB:
-			v.Page.Keyboard.Type(input.Tab)
-		}
-	} else {
-		for _, r := range c.Args {
-			if k, ok := keymap[r]; ok {
-				v.Page.Keyboard.Type(k)
-			}
-		}
-	}
-
-	v.Page.Keyboard.Release(input.AltLeft)
+	executeWithModifier(input.AltLeft, c, v)
 }
 
 // ExecuteShift is a CommandFunc that presses the argument key with the shift
 // key held down on the running instance of vhs.
 func ExecuteShift(c parser.Command, v *VHS) {
-	v.Page.Keyboard.Press(input.ShiftLeft)
+	executeWithModifier(input.ShiftLeft, c, v)
+}
+
+// executeWithModifier types the command's argument with a modifier held down,
+// the way ExecuteCtrl does. It goes through KeyActions rather than the bare
+// Keyboard because the bare Keyboard records the modifier and the key as two
+// keystrokes, which leaves the overlay greying ⌥ into the history and
+// highlighting a lone 8 as the newest key rather than ⌥8.
+func executeWithModifier(modifier input.Key, c parser.Command, v *VHS) {
+	action := v.Page.KeyActions().Press(modifier)
 	if k, ok := token.Keywords[c.Args]; ok {
 		switch k {
 		case token.ENTER:
-			v.Page.Keyboard.Type(input.Enter)
+			action.Type(input.Enter)
 		case token.TAB:
-			v.Page.Keyboard.Type(input.Tab)
+			action.Type(input.Tab)
 		}
 	} else {
 		for _, r := range c.Args {
 			if k, ok := keymap[r]; ok {
-				v.Page.Keyboard.Type(k)
+				action.Type(k)
 			}
 		}
 	}
 
-	v.Page.Keyboard.Release(input.ShiftLeft)
+	action.MustDo()
 }
 
 // ExecuteHide is a CommandFunc that starts or stops the recording of the vhs.

@@ -174,53 +174,46 @@ func (p *Page) KeyActions() *KeyActions {
 	}
 }
 
-// Keyboard is a wrapper around the rod.KeyActions method.
+// KeyActions is a wrapper around the rod.KeyActions method.
 type KeyActions struct {
 	*rod.KeyActions
 	displays        []string
 	KeyStrokeEvents *KeyStrokeEvents
-	modifierActive  bool
-	modifierSymbol  string
+	// heldModifiers is the symbols of the modifiers pressed so far in this
+	// chain, which rod holds down until the chain is executed. They prefix the
+	// keys they modify rather than being recorded as keystrokes of their own,
+	// so that the overlay highlights one compound keystroke (⌥8) instead of
+	// greying the modifier into the history and lighting up the key alone.
+	heldModifiers string
 }
 
 // Press is a wrapper around the rod.KeyActions#Press method.
 func (k *KeyActions) Press(key input.Key) *KeyActions {
 	display := keyToDisplay(key)
-	modifierSymbol := ""
-
-	// Track if this is a modifier key - don't add to displays yet, buffer it
 	if isModifierKey(key) {
-		modifierSymbol = display
+		k.heldModifiers += display
 	} else {
-		k.displays = append(k.displays, display)
+		k.displays = append(k.displays, k.compound(display))
 	}
 
-	return &KeyActions{
-		KeyActions:      k.KeyActions.Press(key),
-		displays:        k.displays,
-		KeyStrokeEvents: k.KeyStrokeEvents,
-		modifierActive:  isModifierKey(key),
-		modifierSymbol:  modifierSymbol,
-	}
+	k.KeyActions.Press(key)
+	return k
 }
 
 // Type is a wrapper around the rod.KeyActions#Type method.
 func (k *KeyActions) Type(key input.Key) *KeyActions {
-	display := keyToDisplay(key)
+	k.displays = append(k.displays, k.compound(keyToDisplay(key)))
+	k.KeyActions.Type(key)
+	return k
+}
 
-	// If a modifier is active, combine modifier symbol with the key (lowercase)
-	if k.modifierActive && !isModifierKey(key) {
-		display = k.modifierSymbol + strings.ToLower(display)
+// compound prefixes a key's display with the modifiers held over it, and
+// lowercases the key so that the modifier is what stands out: ⌃d, not ⌃D.
+func (k *KeyActions) compound(display string) string {
+	if k.heldModifiers == "" {
+		return display
 	}
-
-	k.displays = append(k.displays, display)
-	return &KeyActions{
-		KeyActions:      k.KeyActions.Type(key),
-		displays:        k.displays,
-		KeyStrokeEvents: k.KeyStrokeEvents,
-		modifierActive:  false,
-		modifierSymbol:  "",
-	}
+	return k.heldModifiers + strings.ToLower(display)
 }
 
 // MustDo is a wrapper around the rod.KeyActions#MustDo method.
