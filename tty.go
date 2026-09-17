@@ -32,6 +32,11 @@ func buildTtyCmd(port int, shell Shell) *exec.Cmd {
 		"-t", "disableResizeOverlay=true",
 		"-t", "enableSixel=true",
 		"-t", "customGlyphs=true",
+		// Deliver Alt/Option as Meta, so `Alt+<key>` reaches the program as
+		// ESC + key. Without it xterm.js hands macOS Option to the browser's
+		// own composition and the program receives the unmodified character,
+		// which silently turns an `Alt+p` keybinding into typing a "p".
+		"-t", "macOptionIsMeta=true",
 		"--once", // will allow one connection and exit
 		"--writable",
 	}
