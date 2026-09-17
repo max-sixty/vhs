@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-rod/rod"
@@ -31,7 +32,11 @@ type VHS struct {
 	recording    bool
 	tty          *exec.Cmd
 	totalFrames  int
-	close        func() error
+	// recordedFrames counts the frames written so far. Record writes one per
+	// tick and only while recording, so this is the video's own clock —
+	// which is what the keystroke overlay times its events against.
+	recordedFrames *atomic.Int64
+	close          func() error
 }
 
 // Options is the set of options for the setup.
@@ -107,9 +112,10 @@ func New() VHS {
 	mu := &sync.Mutex{}
 	opts := DefaultVHSOptions()
 	return VHS{
-		Options:   &opts,
-		recording: true,
-		mutex:     mu,
+		Options:        &opts,
+		recording:      true,
+		mutex:          mu,
+		recordedFrames: &atomic.Int64{},
 	}
 }
 
@@ -141,7 +147,7 @@ func (vhs *VHS) Start() error {
 	}
 
 	vhs.browser = browser
-	vhs.Page = NewPage(page)
+	vhs.Page = NewPage(page, vhs.recordedMS)
 	vhs.close = vhs.browser.Close
 	vhs.started = true
 	return nil
@@ -352,6 +358,7 @@ func (vhs *VHS) Record(ctx context.Context) <-chan error {
 				}
 
 				counter++
+				vhs.recordedFrames.Store(int64(counter))
 				if err := os.WriteFile(
 					filepath.Join(vhs.Options.Video.Input, fmt.Sprintf(cursorFrameFormat, counter)),
 					cursor,
@@ -378,6 +385,13 @@ func (vhs *VHS) Record(ctx context.Context) <-chan error {
 	}()
 
 	return ch
+}
+
+// recordedMS reports how much video has been recorded so far, in
+// milliseconds. Every frame in the output is one tick of the recorder, so this
+// converts the frame count into the timeline the finished video plays on.
+func (vhs *VHS) recordedMS() int64 {
+	return vhs.recordedFrames.Load() * 1000 / int64(vhs.Options.Video.Framerate)
 }
 
 // ResumeRecording indicates to VHS that the recording should be resumed.

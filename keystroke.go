@@ -13,18 +13,22 @@ import (
 type KeyStrokeEvent struct {
 	// Display generally includes the current key stroke sequence.
 	Display string
-	// WhenMS is the time in milliseconds when the key was pressed starting
-	// from the beginning of the recording.
+	// WhenMS is where the key press sits in the recorded video, in
+	// milliseconds from its first frame.
 	WhenMS int64
 }
 
 // KeyStrokeEvents is a collection of key press events that you can push to.
 type KeyStrokeEvents struct {
-	enabled        bool
-	display        string
-	events         []KeyStrokeEvent
-	startTimeSet   bool
-	startTime      time.Time
+	enabled bool
+	display string
+	events  []KeyStrokeEvent
+	// videoMS reports how many milliseconds of video have been recorded so
+	// far. Keystroke times come from it rather than the wall clock, so each
+	// event is timed by where it lands in the finished video: a stretch the
+	// tape hid records no frames and so advances it by nothing, and a tape
+	// that types before its Show needs no correction afterwards.
+	videoMS        func() int64
 	duration       time.Duration
 	maxDisplaySize int
 }
@@ -36,17 +40,11 @@ const (
 )
 
 // NewKeyStrokeEvents creates a new KeyStrokeEvents struct.
-func NewKeyStrokeEvents(maxDisplaySize int) *KeyStrokeEvents {
+func NewKeyStrokeEvents(maxDisplaySize int, videoMS func() int64) *KeyStrokeEvents {
 	return &KeyStrokeEvents{
-		display: "",
-		events:  make([]KeyStrokeEvent, 0),
-		// NOTE: This is actually setting the startTime too early. It
-		// takes a while (in computer time) to get to the point where
-		// we start recording. Therefore, we actually set this another
-		// time on the first push. Without this, the final overlay
-		// would be slightly desynced by a 20-40 ms, which is
-		// noticeable to the human eye.
-		startTime:      time.Now(),
+		display:        "",
+		events:         make([]KeyStrokeEvent, 0),
+		videoMS:        videoMS,
 		maxDisplaySize: maxDisplaySize,
 	}
 }
@@ -93,11 +91,9 @@ func isModifierKey(key input.Key) bool {
 }
 
 // Enable enables key press event recording.
-// Also resets the timing so keystrokes sync with video when used after Hide/Show.
 func (k *KeyStrokeEvents) Enable() {
 	k.enabled = true
-	k.startTimeSet = false  // Reset so next Push sets the start time
-	k.display = ""          // Clear any accumulated display
+	k.display = "" // Clear any accumulated display
 }
 
 // Disable disables key press event recording.
@@ -109,7 +105,7 @@ func (k *KeyStrokeEvents) Disable() {
 // This _seems_ small, but it is crucial to ensure that a final key stroke event
 // is not lost due to the recording finishing 1 frame too early.
 func (k *KeyStrokeEvents) End() {
-	k.duration = time.Now().Sub(k.startTime)
+	k.duration = time.Duration(k.videoMS()) * time.Millisecond
 }
 
 // Push adds a new key press event to the collection.
@@ -117,12 +113,6 @@ func (k *KeyStrokeEvents) Push(display string) {
 	// If we're not enabled, we don't want to do anything.
 	if !k.enabled {
 		return
-	}
-
-	// Set start time on first enabled push (reset when Enable() is called)
-	if !k.startTimeSet {
-		k.startTime = time.Now()
-		k.startTimeSet = true
 	}
 
 	// Always space-separate keystrokes for proper parsing in ffmpeg.go
@@ -141,7 +131,7 @@ func (k *KeyStrokeEvents) Push(display string) {
 		// k.maxDisplaySize.
 		k.display = string(displayRunes[1:])
 	}
-	event := KeyStrokeEvent{Display: k.display, WhenMS: time.Now().Sub(k.startTime).Milliseconds()}
+	event := KeyStrokeEvent{Display: k.display, WhenMS: k.videoMS()}
 	k.events = append(k.events, event)
 }
 
@@ -158,8 +148,8 @@ type Page struct {
 }
 
 // NewPage creates a new wrapper Page object.
-func NewPage(page *rod.Page) *Page {
-	keyStrokeEvents := NewKeyStrokeEvents(DefaultMaxDisplaySize)
+func NewPage(page *rod.Page, videoMS func() int64) *Page {
+	keyStrokeEvents := NewKeyStrokeEvents(DefaultMaxDisplaySize, videoMS)
 	return &Page{Page: page, KeyStrokeEvents: keyStrokeEvents, Keyboard: Keyboard{page.Keyboard, page.MustElement("textarea"), keyStrokeEvents}}
 }
 

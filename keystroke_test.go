@@ -16,7 +16,7 @@ func checkKeyStrokeEvents(t *testing.T, events *KeyStrokeEvents, expected ...str
 }
 
 func defaultKeyStrokeEvents() *KeyStrokeEvents {
-	events := NewKeyStrokeEvents(DefaultMaxDisplaySize)
+	events := NewKeyStrokeEvents(DefaultMaxDisplaySize, func() int64 { return 0 })
 	events.Enable()
 
 	return events

@@ -177,10 +177,9 @@ const (
 	keystrokeFontFamily   = "Menlo"
 	keystrokeFontSize     = 70
 	keystrokeRingBuffer   = 6
-	keystrokeDelayMS      = 500.0
 	keystrokeBoxPadding   = 12
-	keystrokeCharWidthPct = 0.6  // Approximate width/height ratio for Menlo monospace
-	keystrokeBottomMargin = 20   // Margin from bottom of screen
+	keystrokeCharWidthPct = 0.6 // Approximate width/height ratio for Menlo monospace
+	keystrokeBottomMargin = 20  // Margin from bottom of screen
 
 	// ASS color format: &HAABBGGRR& (AA=alpha, 00=opaque)
 	assColorBlack = "&H00000000&"
@@ -250,13 +249,13 @@ func generateASSContent(opts VideoOptions, termWidth, termHeight int) string {
 	for i := range events {
 		event := events[i]
 
-		// Apply delay to sync with terminal rendering
-		startTimeS := (float64(event.WhenMS) + keystrokeDelayMS) / 1000
+		// WhenMS is already video time, so it needs no correction here.
+		startTimeS := float64(event.WhenMS) / 1000
 
 		// Calculate end time for this event (must match WithKeyStrokes box timing)
 		var endTimeS float64
 		if i < len(events)-1 {
-			endTimeS = (float64(events[i+1].WhenMS) + keystrokeDelayMS) / 1000
+			endTimeS = float64(events[i+1].WhenMS) / 1000
 		} else {
 			// Last event: show for 10 seconds (arbitrary, recording usually ends before this)
 			endTimeS = startTimeS + 10.0
@@ -329,13 +328,13 @@ func (fb *FilterComplexBuilder) WithKeyStrokes(opts VideoOptions) *FilterComplex
 	for i := range events {
 		event := events[i]
 
-		// Apply delay to sync with terminal rendering
-		startTimeS := (float64(event.WhenMS) + keystrokeDelayMS) / 1000
+		// WhenMS is already video time, so it needs no correction here.
+		startTimeS := float64(event.WhenMS) / 1000
 
 		// Calculate end time for this event
 		var endTimeS float64 = -1
 		if i < len(events)-1 {
-			endTimeS = (float64(events[i+1].WhenMS) + keystrokeDelayMS) / 1000
+			endTimeS = float64(events[i+1].WhenMS) / 1000
 		}
 
 		keystrokes := getKeystrokesForDisplay(event.Display, keystrokeRingBuffer)
